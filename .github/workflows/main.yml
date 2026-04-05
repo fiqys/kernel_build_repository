@@ -8,6 +8,8 @@ on:
 jobs:
   check_and_build:
     runs-on: ubuntu-latest
+    permissions:
+      actions: write  # Required for the cleanup step to delete old runs
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,7 +37,6 @@ jobs:
           TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TO: ${{ secrets.TELEGRAM_TO }}
         run: |
-          # Using local file comparison to ensure the 'skip' logic is bulletproof
           if [ -f .last_hash ] && [ "$(cat .last_hash)" == "${{ steps.get_hash.outputs.latest_hash }}" ]; then
             echo "run_build=false" >> $GITHUB_OUTPUT
             echo "No new commits. Skipping build."
@@ -43,7 +44,6 @@ jobs:
             echo "run_build=true" >> $GITHUB_OUTPUT
             echo "${{ steps.get_hash.outputs.latest_hash }}" > .last_hash
             
-            # Using HTML mode to ensure your emojis and hashes send without errors
             MESSAGE="ⓘ <b>New Kernel Commit!</b>%0A%0AHash: <code>${{ steps.get_hash.outputs.short_hash }}</code>%0AStarting Build Process..."
             curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
                  -d "chat_id=$TO" \
@@ -94,7 +94,7 @@ jobs:
           TO: ${{ secrets.TELEGRAM_TO }}
         run: |
           BUILD_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          MESSAGE="✗ <b>Kernel Build Failed!</b>%0A%0AThe build encountered an error.%0A<a href='$BUILD_URL'>View Logs</a>"
+          MESSAGE="✗ <b>Kernel Build Failed!</b>%0A%0ACheck logs for details.%0A<a href='$BUILD_URL'>View Logs</a>"
           curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
                -d "chat_id=$TO" \
                -d "parse_mode=HTML" \
@@ -106,7 +106,13 @@ jobs:
         with:
           name: kernel-${{ steps.get_hash.outputs.short_hash }}
           path: |
-            out/dist/*.zip
-            out/dist/*.img
-            kernel_build_script/out/dist/*.zip
-            kernel_build_script/out/dist/*.img
+            **/*.zip
+            **/*.img
+
+      - name: Cleanup No-Build Runs
+        if: steps.decide.outputs.run_build == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Deleting current run as no build was triggered..."
+          gh run delete ${{ github.run_id }}
