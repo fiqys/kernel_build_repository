@@ -18,7 +18,7 @@ jobs:
       - name: Get Latest Commit Hash
         id: get_hash
         run: |
-          HASH=$(git ls-remote https://github.com/exynos1480/android_kernel_samsung_a55x HEAD | awk '{ print $1 }')
+          HASH=$(git ls-remote https://github.com/exynos1480/android_kernel_samsung_a55x lineage-23.0 | awk '{ print $1 }')
           echo "latest_hash=$HASH" >> $GITHUB_OUTPUT
           echo "short_hash=${HASH:0:7}" >> $GITHUB_OUTPUT
 
