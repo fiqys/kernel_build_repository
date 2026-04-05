@@ -120,7 +120,7 @@ jobs:
       - name: Cleanup No-Build Runs
         if: always() && steps.decide.outputs.run_build == 'false'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.CLEANUP_TOKEN }}
         run: |
           echo "Deleting current run as no build was triggered..."
           gh run delete ${{ github.run_id }}
