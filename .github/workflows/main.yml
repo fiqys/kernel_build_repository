@@ -120,7 +120,10 @@ jobs:
       - name: Cleanup No-Build Runs
         if: always() && steps.decide.outputs.run_build == 'false'
         env:
-          GH_TOKEN: ${{ secrets.CLEANUP_TOKEN }}
+          CLEAN_TOKEN: ${{ secrets.CLEANUP_TOKEN }}
         run: |
-          echo "Deleting current run as no build was triggered..."
-          gh run delete ${{ github.run_id }}
+          echo "Force deleting run via API..."
+          curl -X DELETE \
+            -H "Authorization: token $CLEAN_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}"
