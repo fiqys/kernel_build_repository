@@ -9,7 +9,8 @@ jobs:
   check_and_build:
     runs-on: ubuntu-latest
     permissions:
-      actions: write  # Required for the cleanup step to delete old runs
+      actions: write
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,12 +40,19 @@ jobs:
         run: |
           if [ -f .last_hash ] && [ "$(cat .last_hash)" == "${{ steps.get_hash.outputs.latest_hash }}" ]; then
             echo "run_build=false" >> $GITHUB_OUTPUT
-            echo "No new commits. Skipping build."
+            
+            # Send Telegram Alert for Skipped Run
+            MESSAGE="ⓘ <b>Check Complete:</b> No new commits found.%0AHash: <code>${{ steps.get_hash.outputs.short_hash }}</code> %0A<i>Run will be cleaned from history.</i>"
+            curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+                 -d "chat_id=$TO" \
+                 -d "parse_mode=HTML" \
+                 -d "text=$MESSAGE"
           else
             echo "run_build=true" >> $GITHUB_OUTPUT
             echo "${{ steps.get_hash.outputs.latest_hash }}" > .last_hash
             
-            MESSAGE="ⓘ <b>New Kernel Commit!</b>%0A%0AHash: <code>${{ steps.get_hash.outputs.short_hash }}</code>%0AStarting Build Process..."
+            # Send Telegram Alert for New Build
+            MESSAGE="ⓘ <b>New Kernel Commit!</b>%0A%0AHash: <code>${{ steps.get_hash.outputs.short_hash }}</code> %0AStarting Build Process..."
             curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
                  -d "chat_id=$TO" \
                  -d "parse_mode=HTML" \
@@ -110,7 +118,7 @@ jobs:
             **/*.img
 
       - name: Cleanup No-Build Runs
-        if: steps.decide.outputs.run_build == 'false'
+        if: always() && steps.decide.outputs.run_build == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
