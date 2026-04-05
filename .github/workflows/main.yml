@@ -12,44 +12,96 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check for new commits
-        id: check
+      - name: Get Latest Commit Hash
+        id: get_hash
         run: |
-          # Fetch the latest commit hash from the target repo
-          LATEST_HASH=$(git ls-remote https://github.com/exynos1480/android_kernel_samsung_a55x HEAD | awk '{ print $1 }')
-          
-          # Try to load the last known hash from a local file (stored in the repo or cache)
-          # Note: For a truly automated "don't own it" setup, 
-          # most users just let the build run or use a cache to store the hash.
-          echo "Latest commit: $LATEST_HASH"
-          echo "hash=$LATEST_HASH" >> $GITHUB_OUTPUT
+          # Fetching hash for the Samsung Kernel
+          HASH=$(git ls-remote https://github.com/exynos1480/android_kernel_samsung_a55x HEAD | awk '{ print $1 }')
+          echo "latest_hash=$HASH" >> $GITHUB_OUTPUT
+          echo "short_hash=${HASH:0:7}" >> $GITHUB_OUTPUT
 
-      # OPTIONAL: Add logic here to compare the hash if you want to save minutes.
-      # Otherwise, the script below will just run every 30 mins:
+      - name: Cache Last Hash
+        id: cache_hash
+        uses: actions/cache@v4
+        with:
+          path: .last_hash
+          key: kernel-hash-${{ steps.get_hash.outputs.latest_hash }}
+
+      - name: Decide and Notify
+        id: decide
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TO: ${{ secrets.TELEGRAM_TO }}
+        run: |
+          if [ "${{ steps.cache_hash.outputs.cache-hit }}" == "true" ]; then
+            echo "run_build=false" >> $GITHUB_OUTPUT
+            echo "No new commits found in exynos1480 repo."
+          else
+            echo "run_build=true" >> $GITHUB_OUTPUT
+            echo "${{ steps.get_hash.outputs.latest_hash }}" > .last_hash
+            
+            # Send Telegram Alert
+            MESSAGE="ⓘ *New Kernel Commit!*%0A%0AHash: \`${{ steps.get_hash.outputs.short_hash }}\` %0AStarting Build Process\.\.\."
+            curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+                 -d "chat_id=$TO" \
+                 -d "parse_mode=MarkdownV2" \
+                 -d "text=$MESSAGE"
+          fi
 
       - name: Maximize Disk Space
+        if: steps.decide.outputs.run_build == 'true'
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo docker image prune -a -f
 
       - name: Install dependencies
+        if: steps.decide.outputs.run_build == 'true'
         run: |
           sudo apt update
           sudo apt install -y git python3 bc bison flex zip curl libssl-dev libelf-dev zlib1g-dev
 
       - name: Clone build script
+        if: steps.decide.outputs.run_build == 'true'
         run: git clone https://github.com/fiqys/kernel_build_script.git
 
       - name: Build kernel
+        if: steps.decide.outputs.run_build == 'true'
         run: |
           cd kernel_build_script
           chmod +x build_kernel.py
           ./build_kernel.py --clean --build-all --flashable-zip
 
+      - name: Success Notification
+        if: success() && steps.decide.outputs.run_build == 'true'
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TO: ${{ secrets.TELEGRAM_TO }}
+        run: |
+          BUILD_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          MESSAGE="✓ *Kernel Build Succeeded\!*%0A%0AThe A55 kernel zip and img are ready for download\. %0A[View Artifacts]($BUILD_URL)"
+          curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+               -d "chat_id=$TO" \
+               -d "parse_mode=MarkdownV2" \
+               -d "text=$MESSAGE"
+
+      - name: Failure Notification
+        if: failure() && steps.decide.outputs.run_build == 'true'
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TO: ${{ secrets.TELEGRAM_TO }}
+        run: |
+          BUILD_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          MESSAGE="✗ *Kernel Build Failed\!*%0A%0AThe build encountered an error\. Check logs for details\. %0A[View Logs]($BUILD_URL)"
+          curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+               -d "chat_id=$TO" \
+               -d "parse_mode=MarkdownV2" \
+               -d "text=$MESSAGE"
+
       - name: Upload artifacts
+        if: steps.decide.outputs.run_build == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-${{ steps.check.outputs.hash }}
+          name: kernel-${{ steps.get_hash.outputs.short_hash }}
           path: |
             kernel_build_script/out/dist/*.zip
             kernel_build_script/out/dist/*.img
