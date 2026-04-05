@@ -103,5 +103,5 @@ jobs:
         with:
           name: kernel-${{ steps.get_hash.outputs.short_hash }}
           path: |
-            kernel_build_script/out/dist/*.zip
-            kernel_build_script/out/dist/*.img
+            out/dist/*.zip
+            out/dist/*.img
