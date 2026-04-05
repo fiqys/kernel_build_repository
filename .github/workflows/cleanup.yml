@@ -1,0 +1,38 @@
+name: Cleanup No-Build Runs
+
+on:
+  workflow_run:
+    workflows: ["Build Kernel"]
+    types: [completed]
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Delete run if no build occurred
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = context.payload.workflow_run.id;
+
+            const jobs = await github.rest.actions.listJobsForWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId,
+            });
+
+            const buildStep = jobs.data.jobs[0]?.steps?.find(s => s.name === 'Build kernel');
+
+            if (buildStep?.conclusion === 'skipped') {
+              console.log(`No build occurred, deleting run ${runId}...`);
+              await github.rest.actions.deleteWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: runId,
+              });
+              console.log('Run deleted successfully.');
+            } else {
+              console.log('Build occurred, keeping run.');
+            }
