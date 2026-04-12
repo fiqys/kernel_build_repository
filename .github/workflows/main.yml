@@ -68,7 +68,7 @@ jobs:
 
       - name: Clone build script
         if: steps.decide.outputs.run_build == 'true'
-        run: git clone https://github.com/fiqys/kernel_build_script.git
+        run: git clone https://github.com/fiqys/kernel_build_script.git -b test
 
       - name: Build kernel
         if: steps.decide.outputs.run_build == 'true'
